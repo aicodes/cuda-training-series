@@ -33,25 +33,36 @@ __global__ void mmul(const float *A, const float *B, float *C, int ds) {
   int idy = threadIdx.y+blockDim.y*blockIdx.y; // create thread y index
 
   if ((idx < ds) && (idy < ds)){
-    float temp = 0;
+    float sum_xy = 0;
+    // For an execution block, the shared memory As/Bs are actually updated
+    //    ds/block_size times in the execution, to read tiled A/B parts
+    //    into the shared memory.
+    //    the i loop accumulates a temp per threadIdx.y, threadIdx.x. 
+    //     
     for (int i = 0; i < ds/block_size; i++) {
 
       // Load data into shared memory
-      As[threadIdx.y][threadIdx.x] = A[FIXME];
-      Bs[threadIdx.y][threadIdx.x] = B[FIXME];
+      // Task: load two BxB blocks to shared memory.
+      //  A is loaded on its row = idy, col = nth-block + relative threadIdx.x position.
+      //  B is loaded on its col = idx, row = nth-block + relative threadIdx.y position.
+      As[threadIdx.y][threadIdx.x] = A[idy * ds + i * block_size + threadIdx.x];
+      Bs[threadIdx.y][threadIdx.x] = B[(i * block_size + threadIdx.y) * ds +  idy];
 
-      // Synchronize
+      // Synchronize to ensure shared memory loading for this particular block.
+      // By now, the shared A, B are full, copyed from A/B
       __syncthreads();
 
       // Keep track of the running sum
       for (int k = 0; k < block_size; k++)
-      	temp += As[FIXME][FIXME] * Bs[FIXME][FIXME]; // dot product of row and column
+      	sum_xy += As[threadIdx.y][k] * Bs[k][threadIdx.x];  // dot product of row and column
+
+      // Synchronize to ensure sum_xy has the matrix dot products.
       __syncthreads();
 
     }
 
     // Write to global memory
-    C[idy*ds+idx] = temp;
+    C[idy*ds+idx] = sum_xy;
   }
 }
 

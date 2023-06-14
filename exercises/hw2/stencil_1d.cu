@@ -8,9 +8,9 @@ using namespace std;
 #define BLOCK_SIZE 16
 
 __global__ void stencil_1d(int *in, int *out) {
-    __shared__ int temp[FIXME];
+    __shared__ int temp[BLOCK_SIZE + 2 * RADIUS];
     int gindex = threadIdx.x + blockIdx.x * blockDim.x;
-    int lindex = FIXME;
+    int lindex = threadIdx.x + RADIUS;
 
     // Read input elements into shared memory
     temp[lindex] = in[gindex];
@@ -25,7 +25,7 @@ __global__ void stencil_1d(int *in, int *out) {
     // Apply the stencil
     int result = 0;
     for (int offset = -RADIUS; offset <= RADIUS; offset++)
-      result += temp[FIXME];
+      result += temp[lindex + offset];
 
     // Store the result
     out[gindex] = result;
@@ -40,9 +40,10 @@ int main(void) {
   int *d_in, *d_out; // device copies of a, b, c
 
   // Alloc space for host copies and setup values
-  int size = (FIXME) * sizeof(int);
-  in = (int *)malloc(size); fill_ints(in, N + 2*RADIUS);
-  out = (int *)malloc(size); fill_ints(out, N + 2*RADIUS);
+  int width = N + 2 * RADIUS;
+  int size = width * sizeof(int);
+  in = (int *)malloc(size); fill_ints(in, width);
+  out = (int *)malloc(size); fill_ints(out, width);
 
   // Alloc space for device copies
   cudaMalloc((void **)&d_in, size);
@@ -53,7 +54,8 @@ int main(void) {
   cudaMemcpy(d_out, out, size, cudaMemcpyHostToDevice);
 
   // Launch stencil_1d() kernel on GPU
-  stencil_1d<<<N/BLOCK_SIZE,BLOCK_SIZE>>>(FIXME, FIXME);
+  // Note here we pass the start address with +RADIUS offset.
+  stencil_1d<<<N/BLOCK_SIZE,BLOCK_SIZE>>>(d_in + RADIUS, d_out + RADIUS);
 
   // Copy result back to host
   cudaMemcpy(out, d_out, size, cudaMemcpyDeviceToHost);
